@@ -1,0 +1,13 @@
+# Ignore system files
+.DS_Store
+Thumbs.db
+
+# Ignore logs
+*.log
+
+# Ignore shell history
+.bash_history
+
+# Ignore compiled scripts or backups
+*.swp
+*~

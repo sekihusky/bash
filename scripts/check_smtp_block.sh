@@ -2,7 +2,7 @@
 
 add_ufw_rule() {
   echo "Adding UFW rule to block outbound TCP port 25 (IPv4/IPv6)..."
-  ufw deny out to any port 25/tcp
+  ufw deny out to any port 25
   echo "UFW rule added. Reloading UFW..."
   ufw reload
 }

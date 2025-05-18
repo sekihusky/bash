@@ -49,9 +49,36 @@ check_and_add_iptables() {
   echo "Note: iptables/ip6tables rules may not persist after reboot. Please save them manually if needed."
 }
 
+check_smtp_connection() {
+  echo "Checking outbound connectivity to TCP port 25..."
+  if ! command -v nc >/dev/null 2>&1; then
+    echo "Installing 'nc' (netcat)..."
+    if command -v apt >/dev/null 2>&1; then
+      apt update && apt install -y netcat
+    elif command -v yum >/dev/null 2>&1; then
+      yum install -y nc
+    elif command -v dnf >/dev/null 2>&1; then
+      dnf install -y nc
+    else
+      echo "Unable to install netcat automatically. Please install it manually."
+      return
+    fi
+  fi
+
+  nc -vz smtp.gmail.com 25
+}
+
 # Detect system type (check if Ubuntu)
 if grep -qi 'ubuntu' /etc/os-release; then
   check_and_add_ufw
 else
   check_and_add_iptables
+fi
+
+# Final check (optional)
+read -p "Do you want to test outbound TCP port 25 connectivity using nc? (y/N): " user_input
+if [[ "$user_input" =~ ^[Yy]$ ]]; then
+  check_smtp_connection
+else
+  echo "Skipping SMTP connectivity test."
 fi

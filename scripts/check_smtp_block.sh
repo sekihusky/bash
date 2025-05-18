@@ -1,36 +1,72 @@
 #!/bin/bash
 
 add_ufw_rule() {
-  echo "Adding UFW rule to block outbound TCP port 25 (IPv4/IPv6)..."
-  ufw deny out to any port 25
-  echo "UFW rule added. Reloading UFW..."
+  echo "Adding UFW rules to block outbound TCP port 25 (IPv4/IPv6)..."
+
+  # IPv4
+  if ! ufw status | grep -qE '^(25|25/tcp)\s+DENY OUT'; then
+    ufw deny out to any port 25 proto tcp || echo "Skipping adding rule (IPv4)"
+  else
+    echo "✅ UFW already has IPv4 rule for TCP port 25"
+  fi
+
+  # IPv6
+  if ! ufw status | grep -qE '^(25|25/tcp)\s+DENY OUT.*\(v6\)'; then
+    ufw deny out to any port 25 proto tcp comment 'Block SMTP IPv6' || echo "Skipping adding rule (IPv6)"
+  else
+    echo "✅ UFW already has IPv6 rule for TCP port 25"
+  fi
+
+  echo "Reloading UFW..."
   ufw reload
 }
 
 add_iptables_rule() {
-  echo "Adding iptables rule to block outbound TCP port 25 (IPv4)..."
-  iptables -A OUTPUT -p tcp --dport 25 -j DROP
-  echo "Adding ip6tables rule to block outbound TCP port 25 (IPv6)..."
-  ip6tables -A OUTPUT -p tcp --dport 25 -j DROP
-  echo "Rules have been added. Note: iptables rules may not persist after reboot unless saved."
+  echo "Adding iptables/ip6tables rules to block outbound TCP port 25..."
+
+  if ! iptables -C OUTPUT -p tcp --dport 25 -j DROP 2>/dev/null; then
+    iptables -A OUTPUT -p tcp --dport 25 -j DROP
+    echo "✅ Added iptables rule for IPv4"
+  else
+    echo "✅ iptables rule for IPv4 already exists"
+  fi
+
+  if ! ip6tables -C OUTPUT -p tcp --dport 25 -j DROP 2>/dev/null; then
+    ip6tables -A OUTPUT -p tcp --dport 25 -j DROP
+    echo "✅ Added ip6tables rule for IPv6"
+  else
+    echo "✅ ip6tables rule for IPv6 already exists"
+  fi
+
+  echo "⚠️ Note: iptables rules may not persist after reboot. Consider saving them if needed."
 }
 
 check_and_add_ufw() {
-  ufw status numbered | grep -E 'OUT.*25/tcp.*DENY' >/dev/null
-  if [ $? -eq 0 ]; then
+  local v4_rule
+  local v6_rule
+
+  v4_rule=$(ufw status | grep -E '^(25|25/tcp)\s+DENY OUT')
+  v6_rule=$(ufw status | grep -E '^(25|25/tcp)\s+DENY OUT.*\(v6\)')
+
+  if [[ -n "$v4_rule" && -n "$v6_rule" ]]; then
     echo "✅ UFW already blocks outbound TCP port 25 (IPv4/IPv6)"
   else
-    echo "❌ UFW does not block outbound TCP port 25 (IPv4/IPv6). Adding rule..."
+    echo "❌ UFW does not completely block outbound TCP port 25. Adding missing rules..."
     add_ufw_rule
   fi
 }
 
 check_and_add_iptables() {
-  iptables -S OUTPUT | grep -- "-p tcp" | grep -- "--dport 25" | grep -E "DROP|REJECT" >/dev/null
-  local v4_blocked=$?
+  local v4_blocked=1
+  local v6_blocked=1
 
-  ip6tables -S OUTPUT | grep -- "-p tcp" | grep -- "--dport 25" | grep -E "DROP|REJECT" >/dev/null
-  local v6_blocked=$?
+  if iptables -C OUTPUT -p tcp --dport 25 -j DROP 2>/dev/null; then
+    v4_blocked=0
+  fi
+
+  if ip6tables -C OUTPUT -p tcp --dport 25 -j DROP 2>/dev/null; then
+    v6_blocked=0
+  fi
 
   if [ $v4_blocked -eq 0 ]; then
     echo "✅ iptables already blocks outbound TCP port 25 (IPv4)"
@@ -46,11 +82,12 @@ check_and_add_iptables() {
     ip6tables -A OUTPUT -p tcp --dport 25 -j DROP
   fi
 
-  echo "Note: iptables/ip6tables rules may not persist after reboot. Please save them manually if needed."
+  echo "⚠️ Note: iptables/ip6tables rules may not persist after reboot. Please save them manually if needed."
 }
 
 check_smtp_connection() {
   echo "Checking outbound connectivity to TCP port 25..."
+
   if ! command -v nc >/dev/null 2>&1; then
     echo "Installing 'nc' (netcat)..."
     if command -v apt >/dev/null 2>&1; then
@@ -68,14 +105,14 @@ check_smtp_connection() {
   nc -vz smtp.gmail.com 25
 }
 
-# Detect system type (check if Ubuntu)
+# Detect system type
 if grep -qi 'ubuntu' /etc/os-release; then
   check_and_add_ufw
 else
   check_and_add_iptables
 fi
 
-# Final check (optional)
+# Optional: test connection
 read -p "Do you want to test outbound TCP port 25 connectivity using nc? (y/N): " user_input
 if [[ "$user_input" =~ ^[Yy]$ ]]; then
   check_smtp_connection

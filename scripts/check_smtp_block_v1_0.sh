@@ -4,14 +4,14 @@ add_ufw_rule() {
   echo "Adding UFW rules to block outbound TCP port 25 (IPv4/IPv6)..."
 
   # IPv4
-  if ! ufw status | grep -q '25/tcp\s\+DENY OUT\s\+Anywhere\s\+# Block SMTP IPv4'; then
-    ufw deny out to any port 25 proto tcp comment 'Block SMTP IPv4' || echo "Skipping adding rule (IPv4)"
+  if ! ufw status | grep -qE '^(25|25/tcp)\s+DENY OUT'; then
+    ufw deny out to any port 25 proto tcp || echo "Skipping adding rule (IPv4)"
   else
     echo "✅ UFW already has IPv4 rule for TCP port 25"
   fi
 
   # IPv6
-  if ! ufw status | grep -q '25/tcp (v6)\s\+DENY OUT\s\+Anywhere \(v6\)\s\+# Block SMTP IPv6'; then
+  if ! ufw status | grep -qE '^(25|25/tcp)\s+DENY OUT.*\(v6\)'; then
     ufw deny out to any port 25 proto tcp comment 'Block SMTP IPv6' || echo "Skipping adding rule (IPv6)"
   else
     echo "✅ UFW already has IPv6 rule for TCP port 25"
@@ -45,8 +45,8 @@ check_and_add_ufw() {
   local v4_rule
   local v6_rule
 
-  v4_rule=$(ufw status | grep -E '25/tcp\s+DENY OUT\s+Anywhere\s+# Block SMTP IPv4')
-  v6_rule=$(ufw status | grep -E '25/tcp \(v6\)\s+DENY OUT\s+Anywhere \(v6\)\s+# Block SMTP IPv6')
+  v4_rule=$(ufw status | grep -E '^(25|25/tcp)\s+DENY OUT')
+  v6_rule=$(ufw status | grep -E '^(25|25/tcp)\s+DENY OUT.*\(v6\)')
 
   if [[ -n "$v4_rule" && -n "$v6_rule" ]]; then
     echo "✅ UFW already blocks outbound TCP port 25 (IPv4/IPv6)"
@@ -91,7 +91,7 @@ check_smtp_connection() {
   if ! command -v nc >/dev/null 2>&1; then
     echo "Installing 'nc' (netcat)..."
     if command -v apt >/dev/null 2>&1; then
-      apt update && apt install -y netcat-openbsd
+      apt update && apt install -y netcat
     elif command -v yum >/dev/null 2>&1; then
       yum install -y nc
     elif command -v dnf >/dev/null 2>&1; then
